@@ -78,7 +78,7 @@ class SocketInputDevice(InputDevice):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-c', '--config', metavar='CONF_FILE', default='multicom.yaml')
+    parser.add_argument('-c', '--config', metavar='CONF_FILE', default='sdt.yaml')
     args = parser.parse_args()
 
     # Read config file
