@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 
-import argparse, re, select, serial, socket, yaml
+import argparse
+import re
+import select
+import serial
+import socket
+import yaml
 
 class InputDeviceError(Exception): pass
 class NoDeviceError(InputDeviceError): pass
