@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import glob
 import re
 import select
 import serial
@@ -50,7 +51,6 @@ class SerialInputDevice(InputDevice):
         self._detect_type(config, 'tty_path')
         self._init_configs(config, ['baud', 'parity', 'endline', 'timeout_s'])
         self.endline = self.endline.encode('utf-8').decode('unicode_escape').encode('utf-8')
-        self.label = f'Serial TTY, {self.tty_path}'
 
         try:
             translate_parity = {
@@ -62,12 +62,21 @@ class SerialInputDevice(InputDevice):
         except KeyError:
             raise ConfigParseError("Invalid parity value: {}, expected one of: {}".format(self.parity, ', '.join(translate_parity.keys())))
 
-        try:
-            self.serial_device = serial.Serial(self.tty_path, self.baud, timeout=self.timeout_s, parity=self.parity)
-        except serial.SerialException as e:
-            raise InputDeviceError(e)
-        except termios.error as e:
-            raise InputDeviceError(e)
+        for pathglob in self.tty_path:
+            paths = glob.glob(pathglob)
+            if len(paths) == 0:
+                continue
+            elif len(paths) == 1:
+                self.label = f'Serial TTY, {paths[0]}'
+                try:
+                    self.serial_device = serial.Serial(paths[0], self.baud, timeout=self.timeout_s, parity=self.parity)
+                except serial.SerialException as e:
+                    raise InputDeviceError(e)
+                return
+            else:
+                raise ConfigParseError('Ambiguous path {} matches multiple devices: {}'.format(pathglob, ' '.join(paths)))
+
+        raise InputDeviceError('No device found for: {}'.format(' '.join(self.tty_path)))
 
     def _read_line_raw(self):
         return self.serial_device.read_until(self.endline).rstrip(self.endline).decode('utf-8', errors='replace')
@@ -83,18 +92,22 @@ class SocketInputDevice(InputDevice):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-c', '--config', metavar='CONF_FILE', default='sdt.yaml')
+    parser.add_argument('config', nargs='+')
     args = parser.parse_args()
 
-    # Read config file
-    try:
-        with open(args.config, 'r') as conf_file:
-            config = yaml.safe_load(conf_file)
-    except IOError as e:
-        error("Failed opening '{}': {}".format(args.config, str(e)))
+    config = {}
+
+    # Read config file(s)
+    for conf_fpath in args.config:
+        try:
+            with open(conf_fpath, 'r') as conf_file:
+                print(f'Reading config file: {conf_fpath}')
+                config.update(yaml.safe_load(conf_file))
+        except FileNotFoundError as e:
+            print(f'Failed opening {conf_fpath}: {e}')
 
     devices = []
-    dev_confs = config['devices']
+    dev_confs = config
 
     # Initialize devices
     for dev_name in dev_confs:
@@ -114,9 +127,7 @@ if __name__ == '__main__':
             if dev != None:
                 break
 
-        if dev == None:
-            print(f'Failed initializing \'{dev_name}\'')
-        else:
+        if dev != None:
             devices.append(dev)
 
     # Read input devices
